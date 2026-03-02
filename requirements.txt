@@ -6,3 +6,4 @@ xarray
 cartopy
 numpy
 pandas
+metpy
