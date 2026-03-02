@@ -1,0 +1,8 @@
+panel
+bokeh
+herbie-data
+matplotlib
+xarray
+cartopy
+numpy
+pandas
