@@ -66,7 +66,9 @@ def _coords(ds):
     return ds[lon_name], ds[lat_name]
 
 def plot_temperature(ds, outfile):
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
@@ -80,7 +82,9 @@ def plot_temperature(ds, outfile):
     plt.close(fig)
 
 def plot_wind(ds, outfile):
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
@@ -88,7 +92,6 @@ def plot_wind(ds, outfile):
     v = ds["VGRD_10maboveground"]
 
     skip = (slice(None, None, 5), slice(None, None, 5))
-
     ax.quiver(lon[skip], lat[skip], u[skip], v[skip], transform=pc, scale=400, width=0.0025, color="white")
 
     ax.set_title(f"10 m Wind Vectors\nValid: {ds.valid_time.item()}")
@@ -96,7 +99,9 @@ def plot_wind(ds, outfile):
     plt.close(fig)
 
 def plot_precip_accum(ds, outfile):
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
@@ -110,7 +115,9 @@ def plot_precip_accum(ds, outfile):
     plt.close(fig)
 
 def plot_precip_rate(ds, outfile):
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
