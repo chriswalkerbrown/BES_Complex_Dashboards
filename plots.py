@@ -213,12 +213,21 @@ def plot_precip_rate(ds, outfile):
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    prate = _first_var(ds, ["PRATE_surface", "prate"])
-    prate_hr = prate * 3600
+    prate = _first_var(ds, ["PRATE_surface", "prate", "tp"])
+    if prate.name == "tp":
+        # Fallback when an explicit rate variable is unavailable.
+        # `tp` is commonly total precipitation in meters over the accumulation period.
+        prate_hr = prate * 1000
+        title = "Precipitation (TP fallback)"
+        units = "mm"
+    else:
+        prate_hr = prate * 3600
+        title = "Instantaneous Precipitation Rate (PRATE)"
+        units = "mm/hr"
 
     p = ax.pcolormesh(lon, lat, prate_hr, transform=pc, cmap="Purples")
-    fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm/hr")
+    fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label=units)
 
-    ax.set_title(f"Instantaneous Precipitation Rate (PRATE)\nValid: {ds.valid_time.item()}")
+    ax.set_title(f"{title}\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
