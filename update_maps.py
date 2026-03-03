@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 import os
 
 from data_fetcher import load_caribbean
@@ -21,19 +22,28 @@ def image_path(name: str, fxx: int) -> str:
 
 
 os.makedirs("static", exist_ok=True)
+available_hours = []
 
 for fxx in FORECAST_HOURS:
-    ds = load_caribbean(fxx=fxx)
-    region = crop_box(ds, 12, 22, -68, -58)
+    try:
+        ds = load_caribbean(fxx=fxx)
+        region = crop_box(ds, 12, 22, -68, -58)
 
-    plot_temperature(region, image_path("region", fxx))
-    write_timestamp("region", fxx)
+        plot_temperature(region, image_path("region", fxx))
+        write_timestamp("region", fxx)
 
-    plot_wind(region, image_path("wind", fxx))
-    write_timestamp("wind", fxx)
+        plot_wind(region, image_path("wind", fxx))
+        write_timestamp("wind", fxx)
 
-    plot_precip_accum(region, image_path("precip_accum", fxx))
-    write_timestamp("precip_accum", fxx)
+        plot_precip_accum(region, image_path("precip_accum", fxx))
+        write_timestamp("precip_accum", fxx)
 
-    plot_precip_rate(region, image_path("precip_rate", fxx))
-    write_timestamp("precip_rate", fxx)
+        plot_precip_rate(region, image_path("precip_rate", fxx))
+        write_timestamp("precip_rate", fxx)
+
+        available_hours.append(_fxx_label(fxx))
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARNING: Failed to generate forecast hour {fxx}: {exc}")
+
+with open("static/available_forecast_hours.json", "w", encoding="utf-8") as f:
+    json.dump(available_hours, f)
