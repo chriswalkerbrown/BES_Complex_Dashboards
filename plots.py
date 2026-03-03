@@ -3,9 +3,6 @@ import cartopy.crs as ccrs
 from herbie.toolbox import EasyMap, pc
 import xarray as xr
 
-# -------------------------------------------------------------------
-# Coordinate detection helpers
-# -------------------------------------------------------------------
 
 def _find_lat_lon_names(ds):
     lat_names = ["latitude", "lat", "y", "Latitude", "gridlat_0"]
@@ -14,7 +11,6 @@ def _find_lat_lon_names(ds):
     lat = next((n for n in lat_names if n in ds.coords or n in ds.data_vars), None)
     lon = next((n for n in lon_names if n in ds.coords or n in ds.data_vars), None)
 
-    # Try to infer from 2D coords
     if lat is None or lon is None:
         for name in ds.coords:
             arr = ds.coords[name]
@@ -26,9 +22,16 @@ def _find_lat_lon_names(ds):
 
     return lat, lon
 
-# -------------------------------------------------------------------
-# Cropping helpers
-# -------------------------------------------------------------------
+
+def _first_var(ds, candidates):
+    for name in candidates:
+        if name in ds.data_vars:
+            return ds[name]
+    raise KeyError(
+        f"None of the expected variables {candidates} were found. "
+        f"Available vars: {list(ds.data_vars)}"
+    )
+
 
 def crop_region(ds, lat_center, lon_center, dlat=0.5, dlon=0.5):
     lat_name, lon_name = _find_lat_lon_names(ds)
@@ -54,17 +57,16 @@ def crop_region(ds, lat_center, lon_center, dlat=0.5, dlon=0.5):
 
     return ds.sel({lat_name: lat_slice, lon_name: lon_slice})
 
+
 def crop_box(ds, lat_min, lat_max, lon_min, lon_max):
     lat_name, lon_name = _find_lat_lon_names(ds)
     return ds.sel({lat_name: slice(lat_max, lat_min), lon_name: slice(lon_min, lon_max)})
 
-# -------------------------------------------------------------------
-# Plotting functions
-# -------------------------------------------------------------------
 
 def _coords(ds):
     lat_name, lon_name = _find_lat_lon_names(ds)
     return ds[lon_name], ds[lat_name]
+
 
 def plot_temperature(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
@@ -73,14 +75,16 @@ def plot_temperature(ds, outfile):
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    t2m = ds["TMP_2maboveground"] - 273.15
+    t2m = _first_var(ds, ["TMP_2maboveground", "t2m", "tmp", "t"])
+    t2m_c = t2m - 273.15
 
-    p = ax.pcolormesh(lon, lat, t2m, transform=pc, cmap="coolwarm")
+    p = ax.pcolormesh(lon, lat, t2m_c, transform=pc, cmap="coolwarm")
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="°C")
 
     ax.set_title(f"2m Temperature\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
 
 def plot_wind(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
@@ -89,8 +93,8 @@ def plot_wind(ds, outfile):
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    u = ds["UGRD_10maboveground"]
-    v = ds["VGRD_10maboveground"]
+    u = _first_var(ds, ["UGRD_10maboveground", "u10", "10u", "u"])
+    v = _first_var(ds, ["VGRD_10maboveground", "v10", "10v", "v"])
 
     skip = (slice(None, None, 5), slice(None, None, 5))
     ax.quiver(lon[skip], lat[skip], u[skip], v[skip], transform=pc, scale=400, width=0.0025, color="white")
@@ -99,6 +103,7 @@ def plot_wind(ds, outfile):
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
+
 def plot_precip_accum(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
@@ -106,7 +111,7 @@ def plot_precip_accum(ds, outfile):
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    apcp = ds["APCP_surface"]
+    apcp = _first_var(ds, ["APCP_surface", "tp", "apcp"])
 
     p = ax.pcolormesh(lon, lat, apcp, transform=pc, cmap="Blues")
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm")
@@ -115,6 +120,7 @@ def plot_precip_accum(ds, outfile):
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
+
 def plot_precip_rate(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
@@ -122,9 +128,10 @@ def plot_precip_rate(ds, outfile):
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    prate = ds["PRATE_surface"] * 3600
+    prate = _first_var(ds, ["PRATE_surface", "prate"])
+    prate_hr = prate * 3600
 
-    p = ax.pcolormesh(lon, lat, prate, transform=pc, cmap="Purples")
+    p = ax.pcolormesh(lon, lat, prate_hr, transform=pc, cmap="Purples")
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm/hr")
 
     ax.set_title(f"Instantaneous Precipitation Rate (PRATE)\nValid: {ds.valid_time.item()}")
