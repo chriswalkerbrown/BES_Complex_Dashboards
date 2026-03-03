@@ -164,7 +164,8 @@ def plot_temperature(ds, outfile):
     t2m = _first_var(ds, ["TMP_2maboveground", "t2m", "tmp", "t"])
     t2m_c = t2m - 273.15
 
-    p = ax.pcolormesh(lon, lat, t2m_c, transform=pc, cmap="coolwarm")
+    # Fixed color scale: 20°C to 30°C 
+    p = ax.pcolormesh( lon, lat, t2m_c, transform=pc, cmap="coolwarm", vmin=20, vmax=30 )
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="°C")
 
     ax.set_title(f"2m Temperature\nValid: {ds.valid_time.item()}")
@@ -213,7 +214,8 @@ def plot_precip_accum(ds, outfile):
     apcp = _first_var(ds, ["APCP_surface", "tp", "apcp"])
 
     apcp = xr.where(apcp < 0, 0, apcp)
-    p = ax.pcolormesh(lon, lat, apcp, transform=pc, cmap="gnuplot2", vmin=0)
+    # Fixed color scale: 0–100 mm 
+    p = ax.pcolormesh( lon, lat, apcp, transform=pc, cmap="gnuplot2", vmin=0, vmax=100 )
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm")
 
     ax.set_title(f"Accumulated Precipitation (APCP)\nValid: {ds.valid_time.item()}")
@@ -233,16 +235,16 @@ def plot_precip_rate(ds, outfile):
     if prate.name == "tp":
         # Fallback when an explicit rate variable is unavailable.
         # `tp` is commonly total precipitation in meters over the accumulation period.
-        prate_hr = prate * 1000
+        prate_hr = prate * 1
         title = "Precipitation (TP fallback)"
         units = "mm"
     else:
-        prate_hr = prate * 3600
+        prate_hr = prate * 1
         title = "Instantaneous Precipitation Rate (PRATE)"
         units = "mm/hr"
 
     prate_hr = xr.where(prate_hr < 0, 0, prate_hr)
-    p = ax.pcolormesh(lon, lat, prate_hr, transform=pc, cmap="gnuplot2", vmin=0)
+    p = ax.pcolormesh(lon, lat, prate_hr, transform=pc, cmap="gnuplot2", vmin=0, vmax=100)
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label=units)
 
     ax.set_title(f"{title}\nValid: {ds.valid_time.item()}")
