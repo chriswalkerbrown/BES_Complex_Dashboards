@@ -5,7 +5,7 @@ import os
 from data_fetcher import load_caribbean
 from plots import crop_box, plot_precip_accum, plot_precip_rate, plot_temperature, plot_wind
 
-FORECAST_HOURS = [0, 3, 12, 24, 48, 72, 168]
+FORECAST_HOURS = [0, 1, 2, 3, 6, 12, 24, 48, 72]
 
 
 def _fxx_label(fxx: int) -> str:
