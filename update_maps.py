@@ -1,37 +1,55 @@
-from data_fetcher import load_caribbean
-from plots import (
-    crop_region, crop_box,
-    plot_temperature, plot_wind,
-    plot_precip_accum, plot_precip_rate
-)
 from datetime import datetime
 import os
 
-def write_timestamp(name):
-    with open(f"static/{name}_timestamp.txt", "w") as f:
+from data_fetcher import load_caribbean
+from plots import (
+    crop_region,
+    crop_box,
+    plot_temperature,
+    plot_wind,
+    plot_precip_accum,
+    plot_precip_rate,
+)
+
+
+FORECAST_HOURS = [0, 3]
+
+
+def _fxx_label(fxx: int) -> str:
+    return f"f{fxx:02d}"
+
+
+def write_timestamp(name: str, fxx: int) -> None:
+    with open(f"static/{name}_{_fxx_label(fxx)}_timestamp.txt", "w", encoding="utf-8") as f:
         f.write(datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
+
+
+def image_path(name: str, fxx: int) -> str:
+    return f"static/{name}_{_fxx_label(fxx)}.png"
+
 
 os.makedirs("static", exist_ok=True)
 
-ds = load_caribbean()
+for fxx in FORECAST_HOURS:
+    ds = load_caribbean(fxx=fxx)
 
-saba = crop_region(ds, 17.63, -63.23)
-plot_temperature(saba, "static/saba.png")
-write_timestamp("saba")
+    saba = crop_region(ds, 17.63, -63.23)
+    plot_temperature(saba, image_path("saba", fxx))
+    write_timestamp("saba", fxx)
 
-statia = crop_region(ds, 17.48, -62.98)
-plot_temperature(statia, "static/statia.png")
-write_timestamp("statia")
+    statia = crop_region(ds, 17.48, -62.98)
+    plot_temperature(statia, image_path("statia", fxx))
+    write_timestamp("statia", fxx)
 
-region = crop_box(ds, 12, 22, -68, -58)
-plot_temperature(region, "static/region.png")
-write_timestamp("region")
+    region = crop_box(ds, 12, 22, -68, -58)
+    plot_temperature(region, image_path("region", fxx))
+    write_timestamp("region", fxx)
 
-plot_wind(region, "static/wind.png")
-write_timestamp("wind")
+    plot_wind(region, image_path("wind", fxx))
+    write_timestamp("wind", fxx)
 
-plot_precip_accum(region, "static/precip_accum.png")
-write_timestamp("precip_accum")
+    plot_precip_accum(region, image_path("precip_accum", fxx))
+    write_timestamp("precip_accum", fxx)
 
-plot_precip_rate(region, "static/precip_rate.png")
-write_timestamp("precip_rate")
+    plot_precip_rate(region, image_path("precip_rate", fxx))
+    write_timestamp("precip_rate", fxx)
