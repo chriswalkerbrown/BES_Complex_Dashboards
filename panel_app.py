@@ -8,34 +8,51 @@ pn.config.theme = "dark"
 
 
 STATIC_DIR = "static"
+FORECAST_HOURS = ["f00", "f03"]
 
 
-def read_timestamp(name: str) -> str:
-    path = os.path.join(STATIC_DIR, f"{name}_timestamp.txt")
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            return f.read().strip()
+def _asset_path(name: str, fhr: str) -> str:
+    preferred = os.path.join(STATIC_DIR, f"{name}_{fhr}.png")
+    if os.path.exists(preferred):
+        return preferred
+
+    fallback = os.path.join(STATIC_DIR, f"{name}_f00.png")
+    if os.path.exists(fallback):
+        return fallback
+
+    return os.path.join(STATIC_DIR, f"{name}.png")
+
+
+def read_timestamp(name: str, fhr: str) -> str:
+    candidates = [
+        os.path.join(STATIC_DIR, f"{name}_{fhr}_timestamp.txt"),
+        os.path.join(STATIC_DIR, f"{name}_f00_timestamp.txt"),
+        os.path.join(STATIC_DIR, f"{name}_timestamp.txt"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return f.read().strip()
     return "No timestamp available"
 
 
 def last_updated() -> str:
     times = []
-    for name in ["saba", "statia", "region", "wind", "precip_accum", "precip_rate"]:
-        path = os.path.join(STATIC_DIR, f"{name}_timestamp.txt")
-        if os.path.exists(path):
-            times.append(os.path.getmtime(path))
+    if not os.path.exists(STATIC_DIR):
+        return "Unknown"
+
+    for filename in os.listdir(STATIC_DIR):
+        if filename.endswith("_timestamp.txt"):
+            times.append(os.path.getmtime(os.path.join(STATIC_DIR, filename)))
+
     if times:
         return datetime.datetime.utcfromtimestamp(max(times)).strftime("%Y-%m-%d %H:%M UTC")
     return "Unknown"
 
 
-# -----------------------------------------------------------------------------
-# Controls
-# -----------------------------------------------------------------------------
-
 forecast_hour = pn.widgets.RadioButtonGroup(
     name="Forecast Hour",
-    options=["f00"],
+    options=FORECAST_HOURS,
     button_type="primary",
     value="f00",
 )
@@ -55,58 +72,52 @@ precip_type = pn.widgets.RadioButtonGroup(
 )
 
 
-# -----------------------------------------------------------------------------
-# View helpers
-# -----------------------------------------------------------------------------
-
-def _temp_layout() -> pn.Column:
+def _temp_layout(fhr: str) -> pn.Column:
     return pn.Column(
         pn.Card(
-            pn.pane.PNG(os.path.join(STATIC_DIR, "saba.png"), sizing_mode="stretch_width", max_width=700),
-            pn.pane.Markdown(f"**Updated:** {read_timestamp('saba')}") ,
+            pn.pane.PNG(_asset_path("saba", fhr), sizing_mode="stretch_width", max_width=700),
+            pn.pane.Markdown(f"**Updated:** {read_timestamp('saba', fhr)}"),
             title="Saba",
             collapsed=False,
         ),
         pn.Card(
-            pn.pane.PNG(os.path.join(STATIC_DIR, "statia.png"), sizing_mode="stretch_width", max_width=700),
-            pn.pane.Markdown(f"**Updated:** {read_timestamp('statia')}") ,
+            pn.pane.PNG(_asset_path("statia", fhr), sizing_mode="stretch_width", max_width=700),
+            pn.pane.Markdown(f"**Updated:** {read_timestamp('statia', fhr)}"),
             title="St. Eustatius",
             collapsed=False,
         ),
         pn.Card(
-            pn.pane.PNG(os.path.join(STATIC_DIR, "region.png"), sizing_mode="stretch_width", max_width=700),
-            pn.pane.Markdown(f"**Updated:** {read_timestamp('region')}") ,
+            pn.pane.PNG(_asset_path("region", fhr), sizing_mode="stretch_width", max_width=700),
+            pn.pane.Markdown(f"**Updated:** {read_timestamp('region', fhr)}"),
             title="Regional Temperature",
             collapsed=False,
         ),
     )
 
 
-def _wind_layout() -> pn.Column:
+def _wind_layout(fhr: str) -> pn.Column:
     return pn.Column(
         pn.Card(
-            pn.pane.PNG(os.path.join(STATIC_DIR, "wind.png"), sizing_mode="stretch_width", max_width=900),
-            pn.pane.Markdown(f"**Updated:** {read_timestamp('wind')}") ,
+            pn.pane.PNG(_asset_path("wind", fhr), sizing_mode="stretch_width", max_width=900),
+            pn.pane.Markdown(f"**Updated:** {read_timestamp('wind', fhr)}"),
             title="10 m Wind Vectors",
             collapsed=False,
         )
     )
 
 
-def _precip_layout(precip_choice: str) -> pn.Column:
+def _precip_layout(precip_choice: str, fhr: str) -> pn.Column:
     if precip_choice == "Accumulated":
-        image = "precip_accum.png"
-        stamp = "precip_accum"
+        image = "precip_accum"
         title = "Accumulated Precipitation"
     else:
-        image = "precip_rate.png"
-        stamp = "precip_rate"
+        image = "precip_rate"
         title = "Instantaneous Precipitation"
 
     return pn.Column(
         pn.Card(
-            pn.pane.PNG(os.path.join(STATIC_DIR, image), sizing_mode="stretch_width", max_width=900),
-            pn.pane.Markdown(f"**Updated:** {read_timestamp(stamp)}") ,
+            pn.pane.PNG(_asset_path(image, fhr), sizing_mode="stretch_width", max_width=900),
+            pn.pane.Markdown(f"**Updated:** {read_timestamp(image, fhr)}"),
             title=title,
             collapsed=False,
         )
@@ -114,18 +125,17 @@ def _precip_layout(precip_choice: str) -> pn.Column:
 
 
 def active_view(layer: str, precip_choice: str, fhr: str):
-    # fhr is currently informational; only latest files are generated in update_maps.py.
     info = pn.pane.Alert(
-        f"Displaying **latest available data** for forecast hour **{fhr}**.",
+        f"Displaying forecast hour **{fhr}**.",
         alert_type="light",
         margin=(0, 0, 10, 0),
     )
 
     if layer == "Temperature":
-        return pn.Column(info, _temp_layout())
+        return pn.Column(info, _temp_layout(fhr))
     if layer == "Wind":
-        return pn.Column(info, _wind_layout())
-    return pn.Column(info, _precip_layout(precip_choice))
+        return pn.Column(info, _wind_layout(fhr))
+    return pn.Column(info, _precip_layout(precip_choice, fhr))
 
 
 main_view = pn.bind(
@@ -148,7 +158,6 @@ controls = pn.Card(
     title="Controls",
     collapsed=False,
 )
-
 
 app = pn.Column(
     header,
