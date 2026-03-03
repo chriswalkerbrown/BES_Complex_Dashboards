@@ -206,7 +206,8 @@ def plot_precip_accum(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
 
-    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES(color="white", linewidth=0.8)
+
 
     lon, lat = _coords(ds)
     apcp = _first_var(ds, ["APCP_surface", "tp", "apcp"])
@@ -224,7 +225,8 @@ def plot_precip_rate(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
 
-    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES(color="white", linewidth=0.8)
+
 
     lon, lat = _coords(ds)
     prate = _first_var(ds, ["PRATE_surface", "prate", "tp"])
