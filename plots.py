@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
 from herbie.toolbox import EasyMap, pc
 import xarray as xr
 
