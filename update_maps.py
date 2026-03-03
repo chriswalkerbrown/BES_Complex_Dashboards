@@ -5,10 +5,11 @@ from plots import (
     plot_precip_accum, plot_precip_rate
 )
 from datetime import datetime
-
+import os
 def write_timestamp(name):
     with open(f"static/{name}_timestamp.txt", "w") as f:
         f.write(datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
+os.makedirs("static", exist_ok=True)
 
 ds = load_caribbean()
 
