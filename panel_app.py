@@ -1,159 +1,194 @@
-import datetime
-import glob
+import html
 import os
+import time
+from pathlib import Path
 
-import panel as pn
+STATIC_DIR = Path("static")
+OUTPUT = Path("index.html")
 
-pn.extension(design="native")
-pn.config.theme = "dark"
+FORECAST_OPTIONS = [
+    ("0h", "f00"),
+    ("3h", "f03"),
+    ("12h", "f12"),
+    ("24h", "f24"),
+    ("48h", "f48"),
+    ("72h", "f72"),
+    ("7d", "f168"),
+]
 
-STATIC_DIR = "static"
-FORECAST_OPTIONS = {
-    "0h": "f00",
-    "3h": "f03",
-    "12h": "f12",
-    "24h": "f24",
-    "48h": "f48",
-    "72h": "f72",
-    "7d": "f168",
-}
-
-
-def _selected_fhr(label: str) -> str:
-    return FORECAST_OPTIONS.get(label, "f00")
+LAYER_OPTIONS = ["Temperature", "Wind", "Rainfall"]
+RAINFALL_OPTIONS = ["Accumulated", "Rate"]
 
 
-def _asset_path(name: str, fhr: str) -> str | None:
+def ts_text(name: str, fhr: str) -> str:
     candidates = [
-        os.path.join(STATIC_DIR, f"{name}_{fhr}.png"),
-        os.path.join(STATIC_DIR, f"{name}_f00.png"),
-        os.path.join(STATIC_DIR, f"{name}.png"),
+        STATIC_DIR / f"{name}_{fhr}_timestamp.txt",
+        STATIC_DIR / f"{name}_f00_timestamp.txt",
+        STATIC_DIR / f"{name}_timestamp.txt",
     ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-
-    # Last-resort fallback: use any generated hour for this variable.
-    matches = sorted(glob.glob(os.path.join(STATIC_DIR, f"{name}_f*.png")))
-    if matches:
-        return matches[0]
-
-    return None
-
-
-def read_timestamp(name: str, fhr: str) -> str:
-    candidates = [
-        os.path.join(STATIC_DIR, f"{name}_{fhr}_timestamp.txt"),
-        os.path.join(STATIC_DIR, f"{name}_f00_timestamp.txt"),
-        os.path.join(STATIC_DIR, f"{name}_timestamp.txt"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                return f.read().strip()
-
-    matches = sorted(glob.glob(os.path.join(STATIC_DIR, f"{name}_f*_timestamp.txt")))
-    if matches:
-        with open(matches[0], encoding="utf-8") as f:
-            return f.read().strip()
-
+    for p in candidates:
+        if p.exists():
+            return p.read_text(encoding="utf-8").strip()
     return "No timestamp available"
 
 
-def last_updated() -> str:
-    times = []
-    if not os.path.exists(STATIC_DIR):
+def image_url(name: str, fhr: str, rev: int) -> str:
+    # Always point to canonical forecast-hour filenames.
+    # Do not gate on local existence to avoid generating an empty state table.
+    return f"static/{name}_{fhr}.png?v={rev}"
+
+
+def compute_latest() -> str:
+    if not STATIC_DIR.exists():
         return "Unknown"
-
-    for filename in os.listdir(STATIC_DIR):
-        if filename.endswith("_timestamp.txt"):
-            times.append(os.path.getmtime(os.path.join(STATIC_DIR, filename)))
-
-    if times:
-        return datetime.datetime.utcfromtimestamp(max(times)).strftime("%Y-%m-%d %H:%M UTC")
-    return "Unknown"
+    stamps = list(STATIC_DIR.glob("*_timestamp.txt"))
+    if not stamps:
+        return "Unknown"
+    latest = max(stamps, key=lambda p: p.stat().st_mtime)
+    return latest.read_text(encoding="utf-8").strip()
 
 
-forecast_hour = pn.widgets.RadioButtonGroup(
-    name="Forecast Hour",
-    options=list(FORECAST_OPTIONS.keys()),
-    button_type="primary",
-    value="0h",
-)
+def build_state_table(rev: int) -> dict:
+    state = {}
+    for label, fhr in FORECAST_OPTIONS:
+        state[label] = {
+            "Temperature": {
+                "src": image_url("region", fhr, rev),
+                "ts": ts_text("region", fhr),
+                "title": "Regional Temperature",
+            },
+            "Wind": {
+                "src": image_url("wind", fhr, rev),
+                "ts": ts_text("wind", fhr),
+                "title": "10 m Wind Vectors",
+            },
+            "Rainfall": {
+                "Accumulated": {
+                    "src": image_url("precip_accum", fhr, rev),
+                    "ts": ts_text("precip_accum", fhr),
+                    "title": "Accumulated Rainfall",
+                },
+                "Rate": {
+                    "src": image_url("precip_rate", fhr, rev),
+                    "ts": ts_text("precip_rate", fhr),
+                    "title": "Rainfall Rate",
+                },
+            },
+        }
+    return state
 
-variable = pn.widgets.RadioButtonGroup(
-    name="Layer",
-    options=["Temperature", "Wind", "Rainfall"],
-    button_type="success",
-    value="Temperature",
-)
 
-rainfall_type = pn.widgets.RadioButtonGroup(
-    name="Rainfall",
-    options=["Accumulated", "Rate"],
-    button_type="warning",
-    value="Accumulated",
-)
+def main() -> None:
+    latest = html.escape(compute_latest())
+    rev = int(time.time())
+    state = build_state_table(rev)
 
+    import json
 
-def _single_card(image_name: str, title: str, fhr: str) -> pn.Column:
-    asset = _asset_path(image_name, fhr)
-    if asset is None:
-        return pn.Column(
-            pn.pane.Alert(
-                f"No image found for **{title}** at **{fhr}**. "
-                "Run `update_maps.py` to generate images.",
-                alert_type="warning",
-            )
-        )
-
-    return pn.Column(
-        pn.Card(
-            pn.pane.PNG(asset, sizing_mode="stretch_width", max_width=950),
-            pn.pane.Markdown(f"**Updated:** {read_timestamp(image_name, fhr)}"),
-            title=title,
-            collapsed=False,
-        )
+    state_json = json.dumps(state)
+    forecast_buttons = "".join(
+        f'<button class="btn" data-group="forecast" data-value="{lbl}">{lbl}</button>' for lbl, _ in FORECAST_OPTIONS
+    )
+    layer_buttons = "".join(
+        f'<button class="btn" data-group="layer" data-value="{opt}">{opt}</button>' for opt in LAYER_OPTIONS
+    )
+    rain_buttons = "".join(
+        f'<button class="btn" data-group="rain" data-value="{opt}">{opt}</button>' for opt in RAINFALL_OPTIONS
     )
 
+    html_doc = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Caribbean Weather Dashboard</title>
+  <style>
+    body {{ font-family: Inter, system-ui, Arial, sans-serif; background:#101419; color:#e8edf2; margin:0; }}
+    .wrap {{ max-width: 1100px; margin: 0 auto; padding: 20px; }}
+    .card {{ background:#17202a; border:1px solid #2a3440; border-radius:14px; padding:16px; margin-bottom:14px; }}
+    h1 {{ margin:0 0 6px 0; }}
+    .muted {{ opacity:.8; }}
+    .row {{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }}
+    .btn {{ background:#243243; border:1px solid #34465a; color:#e8edf2; padding:8px 12px; border-radius:10px; cursor:pointer; }}
+    .btn.active {{ background:#2d6cdf; border-color:#2d6cdf; }}
+    img {{ width:100%; max-width:980px; border-radius:10px; border:1px solid #2a3440; }}
+    .warn {{ color:#ffd479; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Caribbean Weather Dashboard</h1>
+      <div><strong>Last updated:</strong> {latest}</div>
+      <div class="muted">Data source: NAM (NOAA)</div>
+    </div>
 
-def active_view(layer: str, rainfall_choice: str, fhr_label: str):
-    fhr = _selected_fhr(fhr_label)
-    info = pn.pane.Alert(
-        f"Displaying forecast hour **{fhr}**.",
-        alert_type="light",
-        margin=(0, 0, 10, 0),
-    )
+    <div class="card">
+      <div><strong>Forecast Hour</strong></div>
+      <div class="row" id="forecastButtons">{forecast_buttons}</div>
+      <div style="height:8px"></div>
+      <div><strong>Layer</strong></div>
+      <div class="row" id="layerButtons">{layer_buttons}</div>
+      <div style="height:8px"></div>
+      <div><strong>Rainfall Mode</strong></div>
+      <div class="row" id="rainButtons">{rain_buttons}</div>
+    </div>
 
-    if layer == "Temperature":
-        return pn.Column(info, _single_card("region", "Regional Temperature", fhr))
-    if layer == "Wind":
-        return pn.Column(info, _single_card("wind", "10 m Wind Vectors", fhr))
+    <div class="card">
+      <h3 id="plotTitle">Regional Temperature</h3>
+      <div id="warning" class="warn" style="display:none;">No image found for this selection.</div>
+      <img id="plotImage" alt="weather plot" />
+      <div style="margin-top:8px"><strong>Updated:</strong> <span id="plotTs"></span></div>
+    </div>
+  </div>
 
-    image = "precip_accum" if rainfall_choice == "Accumulated" else "precip_rate"
-    title = "Accumulated Rainfall" if rainfall_choice == "Accumulated" else "Rainfall Rate"
-    return pn.Column(info, _single_card(image, title, fhr))
+  <script>
+    const STATE = {state_json};
+    const selected = {{ forecast: '0h', layer: 'Temperature', rain: 'Accumulated' }};
+
+    function setActive(group, value) {{
+      document.querySelectorAll(`[data-group="${{group}}"]`).forEach(b => b.classList.toggle('active', b.dataset.value===value));
+    }}
+
+    function currentEntry() {{
+      const f = STATE[selected.forecast] || STATE['0h'];
+      if (selected.layer === 'Rainfall') {{
+        return (f.Rainfall && f.Rainfall[selected.rain]) || {{src:null, ts:'No timestamp available', title:'Rainfall'}};
+      }}
+      return f[selected.layer] || {{src:null, ts:'No timestamp available', title:selected.layer}};
+    }}
+
+    function render() {{
+      const e = currentEntry();
+      document.getElementById('plotTitle').textContent = e.title || selected.layer;
+      document.getElementById('plotTs').textContent = e.ts || 'No timestamp available';
+      const img = document.getElementById('plotImage');
+      const warn = document.getElementById('warning');
+      if (e.src) {{
+        img.style.display = 'block';
+        img.src = e.src;
+        warn.style.display = 'none';
+      }} else {{
+        img.style.display = 'none';
+        warn.style.display = 'block';
+      }}
+      setActive('forecast', selected.forecast);
+      setActive('layer', selected.layer);
+      setActive('rain', selected.rain);
+    }}
+
+    document.querySelectorAll('[data-group="forecast"]').forEach(btn => btn.onclick = () => {{ selected.forecast = btn.dataset.value; render(); }});
+    document.querySelectorAll('[data-group="layer"]').forEach(btn => btn.onclick = () => {{ selected.layer = btn.dataset.value; render(); }});
+    document.querySelectorAll('[data-group="rain"]').forEach(btn => btn.onclick = () => {{ selected.rain = btn.dataset.value; render(); }});
+
+    render();
+  </script>
+</body>
+</html>
+"""
+
+    OUTPUT.write_text(html_doc, encoding="utf-8")
 
 
-main_view = pn.bind(
-    active_view,
-    layer=variable,
-    rainfall_choice=rainfall_type,
-    fhr_label=forecast_hour,
-)
-
-header = pn.pane.Markdown(
-    f"# Caribbean Weather Dashboard\n"
-    f"**Last updated:** {last_updated()}  \n"
-    "<span style='opacity:0.8'>Data source: NAM (NOAA)</span>",
-    sizing_mode="stretch_width",
-)
-
-controls = pn.Card(
-    pn.Row(forecast_hour, variable, rainfall_type, sizing_mode="stretch_width"),
-    title="Controls",
-    collapsed=False,
-)
-
-app = pn.Column(header, controls, main_view, sizing_mode="stretch_width")
-app.save("index.html", embed=True)
+if __name__ == "__main__":
+    main()
