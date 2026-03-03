@@ -122,6 +122,37 @@ def _coords(ds):
     return ds[lon_name], ds[lat_name]
 
 
+
+
+def _quiver_fields(lon, lat, u, v, step=5):
+    # Handle both 1D and 2D lon/lat coordinate grids safely for quiver plotting.
+    if lon.ndim == 1 and lat.ndim == 1:
+        lat2d, lon2d = xr.broadcast(lat, lon)
+        return (
+            lon2d[::step, ::step],
+            lat2d[::step, ::step],
+            u[::step, ::step],
+            v[::step, ::step],
+        )
+
+    if lon.ndim == 2 and lat.ndim == 2:
+        return (
+            lon[::step, ::step],
+            lat[::step, ::step],
+            u[::step, ::step],
+            v[::step, ::step],
+        )
+
+    # Mixed-dimension fallback (rare): broadcast into 2D first.
+    lat2d, lon2d = xr.broadcast(lat, lon)
+    return (
+        lon2d[::step, ::step],
+        lat2d[::step, ::step],
+        u[::step, ::step],
+        v[::step, ::step],
+    )
+
+
 def plot_temperature(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
@@ -150,8 +181,8 @@ def plot_wind(ds, outfile):
     u = _first_var(ds, ["UGRD_10maboveground", "u10", "10u", "u"])
     v = _first_var(ds, ["VGRD_10maboveground", "v10", "10v", "v"])
 
-    skip = (slice(None, None, 5), slice(None, None, 5))
-    ax.quiver(lon[skip], lat[skip], u[skip], v[skip], transform=pc, scale=400, width=0.0025, color="white")
+    qlon, qlat, qu, qv = _quiver_fields(lon, lat, u, v, step=5)
+    ax.quiver(qlon, qlat, qu, qv, transform=pc, scale=400, width=0.0025, color="white")
 
     ax.set_title(f"10 m Wind Vectors\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
