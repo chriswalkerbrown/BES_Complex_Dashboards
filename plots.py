@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import cartopy.crs as ccrs
 from herbie.toolbox import EasyMap, pc
 import xarray as xr
@@ -178,17 +179,29 @@ def plot_wind(ds, outfile):
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    u = _first_var(ds, ["UGRD_10maboveground", "u10", "10u", "u"])
-    v = _first_var(ds, ["VGRD_10maboveground", "v10", "10v", "v"])
+    u = _first_var(ds, ["UGRD_10maboveground", "u10", "10u", "u"]).squeeze()
+    v = _first_var(ds, ["VGRD_10maboveground", "v10", "10v", "v"]).squeeze()
 
-    qlon, qlat, qu, qv = _quiver_fields(lon, lat, u, v, step=5)
-    ax.quiver(qlon, qlat, qu, qv, transform=pc, scale=400, width=0.0025, color="white")
+    # Add a wind-speed background so there is always visible wind information,
+    # even when quiver arrows become sparse.
+    speed = np.sqrt((u ** 2) + (v ** 2))
+    pm = ax.pcolormesh(lon, lat, speed, transform=pc, cmap="viridis")
+    fig.colorbar(pm, ax=ax, orientation="horizontal", pad=0.05, label="m/s")
 
-    ax.set_title(f"10 m Wind Vectors\nValid: {ds.valid_time.item()}")
+    qlon, qlat, qu, qv = _quiver_fields(lon, lat, u, v, step=1)
+
+    ny, nx = qu.shape[-2], qu.shape[-1]
+    stride = max(1, min(ny, nx) // 20)
+    qlon = qlon[::stride, ::stride]
+    qlat = qlat[::stride, ::stride]
+    qu = qu[::stride, ::stride]
+    qv = qv[::stride, ::stride]
+
+    ax.quiver(qlon, qlat, qu, qv, transform=pc, scale=250, width=0.0022, color="white")
+
+    ax.set_title(f"10 m Wind (speed + vectors)\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
-
-
 def plot_precip_accum(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
