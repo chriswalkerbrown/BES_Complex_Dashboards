@@ -1,5 +1,5 @@
 import datetime
-import json
+import glob
 import os
 
 import panel as pn
@@ -19,29 +19,24 @@ FORECAST_OPTIONS = {
 }
 
 
-def _available_forecast_labels() -> list[str]:
-    path = os.path.join(STATIC_DIR, "available_forecast_hours.json")
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            available = set(json.load(f))
-        labels = [label for label, fhr in FORECAST_OPTIONS.items() if fhr in available]
-        if labels:
-            return labels
-    return ["0h"]
-
-
 def _selected_fhr(label: str) -> str:
     return FORECAST_OPTIONS.get(label, "f00")
 
 
 def _asset_path(name: str, fhr: str) -> str | None:
-    preferred = os.path.join(STATIC_DIR, f"{name}_{fhr}.png")
-    if os.path.exists(preferred):
-        return preferred
+    candidates = [
+        os.path.join(STATIC_DIR, f"{name}_{fhr}.png"),
+        os.path.join(STATIC_DIR, f"{name}_f00.png"),
+        os.path.join(STATIC_DIR, f"{name}.png"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
 
-    legacy = os.path.join(STATIC_DIR, f"{name}.png")
-    if os.path.exists(legacy):
-        return legacy
+    # Last-resort fallback: use any generated hour for this variable.
+    matches = sorted(glob.glob(os.path.join(STATIC_DIR, f"{name}_f*.png")))
+    if matches:
+        return matches[0]
 
     return None
 
@@ -49,12 +44,19 @@ def _asset_path(name: str, fhr: str) -> str | None:
 def read_timestamp(name: str, fhr: str) -> str:
     candidates = [
         os.path.join(STATIC_DIR, f"{name}_{fhr}_timestamp.txt"),
+        os.path.join(STATIC_DIR, f"{name}_f00_timestamp.txt"),
         os.path.join(STATIC_DIR, f"{name}_timestamp.txt"),
     ]
     for path in candidates:
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 return f.read().strip()
+
+    matches = sorted(glob.glob(os.path.join(STATIC_DIR, f"{name}_f*_timestamp.txt")))
+    if matches:
+        with open(matches[0], encoding="utf-8") as f:
+            return f.read().strip()
+
     return "No timestamp available"
 
 
@@ -62,9 +64,11 @@ def last_updated() -> str:
     times = []
     if not os.path.exists(STATIC_DIR):
         return "Unknown"
+
     for filename in os.listdir(STATIC_DIR):
         if filename.endswith("_timestamp.txt"):
             times.append(os.path.getmtime(os.path.join(STATIC_DIR, filename)))
+
     if times:
         return datetime.datetime.utcfromtimestamp(max(times)).strftime("%Y-%m-%d %H:%M UTC")
     return "Unknown"
@@ -72,9 +76,9 @@ def last_updated() -> str:
 
 forecast_hour = pn.widgets.RadioButtonGroup(
     name="Forecast Hour",
-    options=_available_forecast_labels(),
+    options=list(FORECAST_OPTIONS.keys()),
     button_type="primary",
-    value=_available_forecast_labels()[0],
+    value="0h",
 )
 
 variable = pn.widgets.RadioButtonGroup(
@@ -98,7 +102,7 @@ def _single_card(image_name: str, title: str, fhr: str) -> pn.Column:
         return pn.Column(
             pn.pane.Alert(
                 f"No image found for **{title}** at **{fhr}**. "
-                "Run `update_maps.py` for this forecast hour.",
+                "Run `update_maps.py` to generate images.",
                 alert_type="warning",
             )
         )
