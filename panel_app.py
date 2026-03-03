@@ -2,7 +2,8 @@ import panel as pn
 import json
 import os
 
-pn.extension(design="dark")
+pn.extension(design="native")
+pn.config.theme = "dark"
 
 def read_timestamp(name):
     path = f"static/{name}_timestamp.txt"
