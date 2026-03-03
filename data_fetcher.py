@@ -6,7 +6,10 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-xr.set_options(use_new_combine_kwarg_defaults=True)
+# Keep compatibility across xarray releases by only setting the combine
+# behavior option when it exists.
+if "use_new_combine_kwarg_defaults" in xr.core.options.OPTIONS:
+    xr.set_options(use_new_combine_kwarg_defaults=True)
 
 REQUIRED_VARS = {
     "TMP_2maboveground",
