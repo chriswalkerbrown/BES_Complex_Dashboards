@@ -33,6 +33,65 @@ def _first_var(ds, candidates):
     )
 
 
+def _normalize_lon_for_grid(lon_value, lon_vals):
+    lon_min = float(lon_vals.min())
+    lon_max = float(lon_vals.max())
+
+    # If data uses 0..360 convention, map negative request longitudes into that range.
+    if lon_min >= 0 and lon_max > 180 and lon_value < 0:
+        return lon_value % 360
+
+    # If data uses -180..180 and request is 0..360, map back.
+    if lon_max <= 180 and lon_value > 180:
+        return ((lon_value + 180) % 360) - 180
+
+    return lon_value
+
+
+def _subset_1d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max):
+    lat_vals = ds.coords[lat_name].values
+    lon_vals = ds.coords[lon_name].values
+
+    lon_min = _normalize_lon_for_grid(lon_min, lon_vals)
+    lon_max = _normalize_lon_for_grid(lon_max, lon_vals)
+
+    lat_slice = slice(lat_min, lat_max) if lat_vals[0] < lat_vals[-1] else slice(lat_max, lat_min)
+    lon_slice = slice(lon_min, lon_max) if lon_vals[0] < lon_vals[-1] else slice(lon_max, lon_min)
+
+    out = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
+
+    # If longitude wrap-around produced an empty selection, select by nearest indices instead.
+    if out.sizes.get(lon_name, 0) == 0:
+        lon_center = (lon_min + lon_max) / 2
+        lat_center = (lat_min + lat_max) / 2
+        iy = abs(lat_vals - lat_center).argmin()
+        ix = abs(lon_vals - lon_center).argmin()
+        y0, y1 = max(0, iy - 5), min(len(lat_vals), iy + 6)
+        x0, x1 = max(0, ix - 5), min(len(lon_vals), ix + 6)
+        out = ds.isel({lat_name: slice(y0, y1), lon_name: slice(x0, x1)})
+
+    return out
+
+
+def _subset_2d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max):
+    lat = ds[lat_name]
+    lon = ds[lon_name]
+
+    lon_norm = xr.where(lon > 180, lon - 360, lon)
+    lon_min_norm = ((lon_min + 180) % 360) - 180
+    lon_max_norm = ((lon_max + 180) % 360) - 180
+
+    if lon_min_norm <= lon_max_norm:
+        lon_mask = (lon_norm >= lon_min_norm) & (lon_norm <= lon_max_norm)
+    else:
+        lon_mask = (lon_norm >= lon_min_norm) | (lon_norm <= lon_max_norm)
+
+    mask = (lat >= lat_min) & (lat <= lat_max) & lon_mask
+    out = ds.where(mask, drop=True)
+
+    return out
+
+
 def crop_region(ds, lat_center, lon_center, dlat=0.5, dlon=0.5):
     lat_name, lon_name = _find_lat_lon_names(ds)
     if lat_name is None or lon_name is None:
@@ -43,24 +102,19 @@ def crop_region(ds, lat_center, lon_center, dlat=0.5, dlon=0.5):
     lon_min = lon_center - dlon
     lon_max = lon_center + dlon
 
-    lat_vals = ds.coords[lat_name].values
-    if lat_vals.ndim == 1:
-        lat_slice = slice(lat_min, lat_max) if lat_vals[0] < lat_vals[-1] else slice(lat_max, lat_min)
-    else:
-        lat_slice = slice(lat_min, lat_max)
+    if ds.coords[lat_name].values.ndim == 1 and ds.coords[lon_name].values.ndim == 1:
+        return _subset_1d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
 
-    lon_vals = ds.coords[lon_name].values
-    if lon_vals.ndim == 1:
-        lon_slice = slice(lon_min, lon_max) if lon_vals[0] < lon_vals[-1] else slice(lon_max, lon_min)
-    else:
-        lon_slice = slice(lon_min, lon_max)
-
-    return ds.sel({lat_name: lat_slice, lon_name: lon_slice})
+    return _subset_2d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
 
 
 def crop_box(ds, lat_min, lat_max, lon_min, lon_max):
     lat_name, lon_name = _find_lat_lon_names(ds)
-    return ds.sel({lat_name: slice(lat_max, lat_min), lon_name: slice(lon_min, lon_max)})
+
+    if ds.coords[lat_name].values.ndim == 1 and ds.coords[lon_name].values.ndim == 1:
+        return _subset_1d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
+
+    return _subset_2d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
 
 
 def _coords(ds):
