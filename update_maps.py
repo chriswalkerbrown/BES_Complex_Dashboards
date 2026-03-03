@@ -2,17 +2,9 @@ from datetime import datetime
 import os
 
 from data_fetcher import load_caribbean
-from plots import (
-    crop_region,
-    crop_box,
-    plot_temperature,
-    plot_wind,
-    plot_precip_accum,
-    plot_precip_rate,
-)
+from plots import crop_box, plot_precip_accum, plot_precip_rate, plot_temperature, plot_wind
 
-
-FORECAST_HOURS = [0, 3]
+FORECAST_HOURS = [0, 3, 12, 24, 48, 72, 168]
 
 
 def _fxx_label(fxx: int) -> str:
@@ -32,16 +24,8 @@ os.makedirs("static", exist_ok=True)
 
 for fxx in FORECAST_HOURS:
     ds = load_caribbean(fxx=fxx)
-
-    saba = crop_region(ds, 17.63, -63.23)
-    plot_temperature(saba, image_path("saba", fxx))
-    write_timestamp("saba", fxx)
-
-    statia = crop_region(ds, 17.48, -62.98)
-    plot_temperature(statia, image_path("statia", fxx))
-    write_timestamp("statia", fxx)
-
     region = crop_box(ds, 12, 22, -68, -58)
+
     plot_temperature(region, image_path("region", fxx))
     write_timestamp("region", fxx)
 
