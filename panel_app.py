@@ -1,4 +1,5 @@
 import datetime
+import json
 import os
 
 import panel as pn
@@ -18,24 +19,36 @@ FORECAST_OPTIONS = {
 }
 
 
+def _available_forecast_labels() -> list[str]:
+    path = os.path.join(STATIC_DIR, "available_forecast_hours.json")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            available = set(json.load(f))
+        labels = [label for label, fhr in FORECAST_OPTIONS.items() if fhr in available]
+        if labels:
+            return labels
+    return ["0h"]
+
+
 def _selected_fhr(label: str) -> str:
     return FORECAST_OPTIONS.get(label, "f00")
 
 
-def _asset_path(name: str, fhr: str) -> str:
+def _asset_path(name: str, fhr: str) -> str | None:
     preferred = os.path.join(STATIC_DIR, f"{name}_{fhr}.png")
     if os.path.exists(preferred):
         return preferred
-    fallback = os.path.join(STATIC_DIR, f"{name}_f00.png")
-    if os.path.exists(fallback):
-        return fallback
-    return os.path.join(STATIC_DIR, f"{name}.png")
+
+    legacy = os.path.join(STATIC_DIR, f"{name}.png")
+    if os.path.exists(legacy):
+        return legacy
+
+    return None
 
 
 def read_timestamp(name: str, fhr: str) -> str:
     candidates = [
         os.path.join(STATIC_DIR, f"{name}_{fhr}_timestamp.txt"),
-        os.path.join(STATIC_DIR, f"{name}_f00_timestamp.txt"),
         os.path.join(STATIC_DIR, f"{name}_timestamp.txt"),
     ]
     for path in candidates:
@@ -59,9 +72,9 @@ def last_updated() -> str:
 
 forecast_hour = pn.widgets.RadioButtonGroup(
     name="Forecast Hour",
-    options=list(FORECAST_OPTIONS.keys()),
+    options=_available_forecast_labels(),
     button_type="primary",
-    value="0h",
+    value=_available_forecast_labels()[0],
 )
 
 variable = pn.widgets.RadioButtonGroup(
@@ -80,9 +93,19 @@ rainfall_type = pn.widgets.RadioButtonGroup(
 
 
 def _single_card(image_name: str, title: str, fhr: str) -> pn.Column:
+    asset = _asset_path(image_name, fhr)
+    if asset is None:
+        return pn.Column(
+            pn.pane.Alert(
+                f"No image found for **{title}** at **{fhr}**. "
+                "Run `update_maps.py` for this forecast hour.",
+                alert_type="warning",
+            )
+        )
+
     return pn.Column(
         pn.Card(
-            pn.pane.PNG(_asset_path(image_name, fhr), sizing_mode="stretch_width", max_width=950),
+            pn.pane.PNG(asset, sizing_mode="stretch_width", max_width=950),
             pn.pane.Markdown(f"**Updated:** {read_timestamp(image_name, fhr)}"),
             title=title,
             collapsed=False,
@@ -129,6 +152,4 @@ controls = pn.Card(
 )
 
 app = pn.Column(header, controls, main_view, sizing_mode="stretch_width")
-app.save("index.html", embed=True)
-
 app.save("index.html", embed=True)
