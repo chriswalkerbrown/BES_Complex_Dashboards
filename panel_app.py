@@ -8,8 +8,6 @@ OUTPUT = Path("index.html")
 
 FORECAST_OPTIONS = [
     ("0h", "f00"),
-    ("1h", "f01"),
-    ("2h", "f02"),
     ("3h", "f03"),
     ("6h", "f06"),
     ("12h", "f12"),
