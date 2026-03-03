@@ -198,7 +198,8 @@ def plot_precip_accum(ds, outfile):
     lon, lat = _coords(ds)
     apcp = _first_var(ds, ["APCP_surface", "tp", "apcp"])
 
-    p = ax.pcolormesh(lon, lat, apcp, transform=pc, cmap="Blues")
+    apcp = xr.where(apcp < 0, 0, apcp)
+    p = ax.pcolormesh(lon, lat, apcp, transform=pc, cmap="gnuplot2", vmin=0)
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm")
 
     ax.set_title(f"Accumulated Precipitation (APCP)\nValid: {ds.valid_time.item()}")
@@ -225,7 +226,8 @@ def plot_precip_rate(ds, outfile):
         title = "Instantaneous Precipitation Rate (PRATE)"
         units = "mm/hr"
 
-    p = ax.pcolormesh(lon, lat, prate_hr, transform=pc, cmap="Purples")
+    prate_hr = xr.where(prate_hr < 0, 0, prate_hr)
+    p = ax.pcolormesh(lon, lat, prate_hr, transform=pc, cmap="gnuplot2", vmin=0)
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label=units)
 
     ax.set_title(f"{title}\nValid: {ds.valid_time.item()}")
