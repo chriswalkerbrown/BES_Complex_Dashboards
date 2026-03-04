@@ -223,7 +223,7 @@ def plot_precip_accum(ds, outfile):
     plt.close(fig)
 
 
-def plot_precip_rate(ds, outfile):
+def plot_precip_rate(ds, outfile, forecast_hour=None):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
 
@@ -233,11 +233,17 @@ def plot_precip_rate(ds, outfile):
     lon, lat = _coords(ds)
     prate = _first_var(ds, ["PRATE_surface", "prate", "tp"])
     if prate.name == "tp":
-        # Fallback when an explicit rate variable is unavailable.
-        # `tp` is commonly total precipitation in meters over the accumulation period.
-        prate_hr = prate * 1
-        title = "Precipitation (TP fallback)"
-        units = "mm"
+                # Fallback when explicit rate is unavailable:
+        # convert accumulated total precip (tp, meters) to average mm/hr.
+        if forecast_hour is None:
+            try:
+                forecast_hour = int(ds["step"].dt.total_seconds().item() // 3600)
+            except Exception:
+                forecast_hour = 1
+        hours = max(int(forecast_hour), 1)
+        prate_hr = (prate * 1000) / hours
+        title = f"Average Rainfall Rate from TP ({hours}h)"
+        units = "mm/hr"
     else:
         prate_hr = prate * 1
         title = "Instantaneous Precipitation Rate (PRATE)"
