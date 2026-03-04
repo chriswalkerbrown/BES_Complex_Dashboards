@@ -38,7 +38,7 @@ for fxx in FORECAST_HOURS:
         plot_precip_accum(region, image_path("precip_accum", fxx))
         write_timestamp("precip_accum", fxx)
 
-        plot_precip_rate(region, image_path("precip_rate", fxx))
+        plot_precip_rate(region, image_path("precip_rate", fxx), forecast_hour=fxx)
         write_timestamp("precip_rate", fxx)
 
         available_hours.append(_fxx_label(fxx))
