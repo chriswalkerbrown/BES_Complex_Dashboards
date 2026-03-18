@@ -1,9 +1,14 @@
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 import cartopy.crs as ccrs
 from herbie.toolbox import EasyMap, pc
 import xarray as xr
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Internal helpers
+# ══════════════════════════════════════════════════════════════════════════════
 
 def _find_lat_lon_names(ds):
     lat_names = ["latitude", "lat", "y", "Latitude", "gridlat_0"]
@@ -37,15 +42,10 @@ def _first_var(ds, candidates):
 def _normalize_lon_for_grid(lon_value, lon_vals):
     lon_min = float(lon_vals.min())
     lon_max = float(lon_vals.max())
-
-    # If data uses 0..360 convention, map negative request longitudes into that range.
     if lon_min >= 0 and lon_max > 180 and lon_value < 0:
         return lon_value % 360
-
-    # If data uses -180..180 and request is 0..360, map back.
     if lon_max <= 180 and lon_value > 180:
         return ((lon_value + 180) % 360) - 180
-
     return lon_value
 
 
@@ -61,7 +61,6 @@ def _subset_1d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max):
 
     out = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
 
-    # If longitude wrap-around produced an empty selection, select by nearest indices instead.
     if out.sizes.get(lon_name, 0) == 0:
         lon_center = (lon_min + lon_max) / 2
         lat_center = (lat_min + lat_max) / 2
@@ -88,33 +87,26 @@ def _subset_2d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max):
         lon_mask = (lon_norm >= lon_min_norm) | (lon_norm <= lon_max_norm)
 
     mask = (lat >= lat_min) & (lat <= lat_max) & lon_mask
-    out = ds.where(mask, drop=True)
-
-    return out
+    return ds.where(mask, drop=True)
 
 
 def crop_region(ds, lat_center, lon_center, dlat=0.5, dlon=0.5):
     lat_name, lon_name = _find_lat_lon_names(ds)
     if lat_name is None or lon_name is None:
-        raise ValueError(f"Could not find latitude/longitude coords in dataset. coords: {list(ds.coords)}")
+        raise ValueError(f"Could not find lat/lon coords. coords: {list(ds.coords)}")
 
-    lat_min = lat_center - dlat
-    lat_max = lat_center + dlat
-    lon_min = lon_center - dlon
-    lon_max = lon_center + dlon
+    lat_min, lat_max = lat_center - dlat, lat_center + dlat
+    lon_min, lon_max = lon_center - dlon, lon_center + dlon
 
     if ds.coords[lat_name].values.ndim == 1 and ds.coords[lon_name].values.ndim == 1:
         return _subset_1d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
-
     return _subset_2d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
 
 
 def crop_box(ds, lat_min, lat_max, lon_min, lon_max):
     lat_name, lon_name = _find_lat_lon_names(ds)
-
     if ds.coords[lat_name].values.ndim == 1 and ds.coords[lon_name].values.ndim == 1:
         return _subset_1d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
-
     return _subset_2d(ds, lat_name, lon_name, lat_min, lat_max, lon_min, lon_max)
 
 
@@ -123,52 +115,72 @@ def _coords(ds):
     return ds[lon_name], ds[lat_name]
 
 
-
-
 def _quiver_fields(lon, lat, u, v, step=5):
-    # Handle both 1D and 2D lon/lat coordinate grids safely for quiver plotting.
     if lon.ndim == 1 and lat.ndim == 1:
         lat2d, lon2d = xr.broadcast(lat, lon)
-        return (
-            lon2d[::step, ::step],
-            lat2d[::step, ::step],
-            u[::step, ::step],
-            v[::step, ::step],
-        )
-
+        return lon2d[::step, ::step], lat2d[::step, ::step], u[::step, ::step], v[::step, ::step]
     if lon.ndim == 2 and lat.ndim == 2:
-        return (
-            lon[::step, ::step],
-            lat[::step, ::step],
-            u[::step, ::step],
-            v[::step, ::step],
-        )
-
-    # Mixed-dimension fallback (rare): broadcast into 2D first.
+        return lon[::step, ::step], lat[::step, ::step], u[::step, ::step], v[::step, ::step]
     lat2d, lon2d = xr.broadcast(lat, lon)
+    return lon2d[::step, ::step], lat2d[::step, ::step], u[::step, ::step], v[::step, ::step]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Meteorological derivations
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _rh_from_dewpoint(t_k, td_k):
+    """Approximate relative humidity (%) from temperature and dewpoint (both K)."""
+    t_c  = np.asarray(t_k,  dtype=float) - 273.15
+    td_c = np.asarray(td_k, dtype=float) - 273.15
+    # Magnus formula (Bolton 1980)
+    es = 6.112 * np.exp(17.67 * t_c  / (t_c  + 243.5))
+    e  = 6.112 * np.exp(17.67 * td_c / (td_c + 243.5))
+    return np.clip(100.0 * e / es, 0.0, 100.0)
+
+
+def _wetbulb_stull(t_c, rh):
+    """Wet-bulb temperature (°C) via Stull (2011) empirical formula.
+
+    Valid for -20 °C <= T <= 50 °C and 5 % <= RH <= 99 %.
+    Stull, R. (2011), J. Appl. Meteorol. Climatol. 50, 2267–2269.
+    """
+    t  = np.asarray(t_c,  dtype=float)
+    rh = np.asarray(rh,   dtype=float)
     return (
-        lon2d[::step, ::step],
-        lat2d[::step, ::step],
-        u[::step, ::step],
-        v[::step, ::step],
+        t  * np.arctan(0.151977 * (rh + 8.313659) ** 0.5)
+        + np.arctan(t + rh)
+        - np.arctan(rh - 1.676331)
+        + 0.00391838 * rh ** 1.5 * np.arctan(0.023101 * rh)
+        - 4.686035
     )
 
+
+def _et_from_lhtfl(lhtfl):
+    """Convert surface latent heat net flux (W m⁻²) to evapotranspiration (mm day⁻¹).
+
+    ET = LHTFL / (Lv * rho_w) * seconds_per_day * 1000
+       = LHTFL / 2.501e6 * 86400   [mm day⁻¹]
+    Negative LHTFL (condensation) is clamped to zero.
+    """
+    et = np.asarray(lhtfl, dtype=float) / 2.501e6 * 86400.0
+    return np.where(et < 0, 0.0, et)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Existing plot functions
+# ══════════════════════════════════════════════════════════════════════════════
 
 def plot_temperature(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
-
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
     t2m = _first_var(ds, ["TMP_2maboveground", "t2m", "tmp", "t"])
-    t2m_c = t2m - 273.15
-
-    # Fixed color scale: 20°C to 30°C 
-    p = ax.pcolormesh( lon, lat, t2m_c, transform=pc, cmap="coolwarm", vmin=20, vmax=30 )
+    p = ax.pcolormesh(lon, lat, t2m - 273.15, transform=pc, cmap="coolwarm", vmin=20, vmax=30)
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="°C")
-
-    ax.set_title(f"2m Temperature\nValid: {ds.valid_time.item()}")
+    ax.set_title(f"2 m Temperature\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -176,48 +188,38 @@ def plot_temperature(ds, outfile):
 def plot_wind(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
-
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
     u = _first_var(ds, ["UGRD_10maboveground", "u10", "10u", "u"]).squeeze()
     v = _first_var(ds, ["VGRD_10maboveground", "v10", "10v", "v"]).squeeze()
 
-    # Add a wind-speed background so there is always visible wind information,
-    # even when quiver arrows become sparse.
-    speed = np.sqrt((u ** 2) + (v ** 2))
+    speed = np.sqrt(u**2 + v**2)
     pm = ax.pcolormesh(lon, lat, speed, transform=pc, cmap="viridis")
     fig.colorbar(pm, ax=ax, orientation="horizontal", pad=0.05, label="m/s")
 
     qlon, qlat, qu, qv = _quiver_fields(lon, lat, u, v, step=1)
-
     ny, nx = qu.shape[-2], qu.shape[-1]
     stride = max(1, min(ny, nx) // 20)
-    qlon = qlon[::stride, ::stride]
-    qlat = qlat[::stride, ::stride]
-    qu = qu[::stride, ::stride]
-    qv = qv[::stride, ::stride]
-
-    ax.quiver(qlon, qlat, qu, qv, transform=pc, scale=250, width=0.0022, color="white")
+    ax.quiver(qlon[::stride, ::stride], qlat[::stride, ::stride],
+              qu[::stride, ::stride], qv[::stride, ::stride],
+              transform=pc, scale=250, width=0.0022, color="white")
 
     ax.set_title(f"10 m Wind (speed + vectors)\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+
 def plot_precip_accum(ds, outfile):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
-
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES(color="white", linewidth=0.8)
-
 
     lon, lat = _coords(ds)
     apcp = _first_var(ds, ["APCP_surface", "tp", "apcp"])
-
     apcp = xr.where(apcp < 0, 0, apcp)
-    # Fixed color scale: 0–100 mm 
-    p = ax.pcolormesh( lon, lat, apcp, transform=pc, cmap="gnuplot2", vmin=0, vmax=100 )
+    p = ax.pcolormesh(lon, lat, apcp, transform=pc, cmap="gnuplot2", vmin=0, vmax=100)
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm")
-
     ax.set_title(f"Accumulated Precipitation (APCP)\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -226,15 +228,12 @@ def plot_precip_accum(ds, outfile):
 def plot_precip_rate(ds, outfile, forecast_hour=None):
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
-
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES(color="white", linewidth=0.8)
-
 
     lon, lat = _coords(ds)
     prate = _first_var(ds, ["PRATE_surface", "prate", "tp"])
+
     if prate.name == "tp":
-                # Fallback when explicit rate is unavailable:
-        # convert accumulated total precip (tp, meters) to average mm/hr.
         if forecast_hour is None:
             try:
                 forecast_hour = int(ds["step"].dt.total_seconds().item() // 3600)
@@ -252,7 +251,139 @@ def plot_precip_rate(ds, outfile, forecast_hour=None):
     prate_hr = xr.where(prate_hr < 0, 0, prate_hr)
     p = ax.pcolormesh(lon, lat, prate_hr, transform=pc, cmap="gnuplot2", vmin=0, vmax=100)
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label=units)
-
     ax.set_title(f"{title}\nValid: {ds.valid_time.item()}")
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# New plot functions
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_wetbulb(ds, outfile):
+    """Wet-bulb temperature at 2 m derived via Stull (2011)."""
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
+
+    lon, lat = _coords(ds)
+    t2m = _first_var(ds, ["TMP_2maboveground", "t2m", "tmp", "t"]).values
+    td2m = _first_var(ds, ["DPT_2maboveground", "d2m", "dpt"]).values
+
+    rh   = _rh_from_dewpoint(t2m, td2m)
+    t2m_c = t2m - 273.15
+    wb    = _wetbulb_stull(t2m_c, rh)
+
+    # Caribbean wet-bulb range: ~20–32 °C; WBGT threshold for heavy work ~28 °C
+    p = ax.pcolormesh(lon, lat, wb, transform=pc, cmap="RdYlGn_r", vmin=20, vmax=32)
+    cbar = fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="°C")
+    # Mark the WBGT-equivalent caution line at 28 °C
+    cbar.ax.axvline(28, color="red", linewidth=1.5, linestyle="--")
+
+    ax.set_title(f"Wet-bulb Temperature (2 m, Stull 2011)\nValid: {ds.valid_time.item()}")
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_cloud_cover(ds, outfile):
+    """Total cloud cover for the entire atmospheric column (0–100 %)."""
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES(linewidth=0.8)
+
+    lon, lat = _coords(ds)
+    tcdc = _first_var(ds, ["TCDC_entireatmosphere", "tcc", "tcdc"]).squeeze()
+    tcdc = xr.where(tcdc < 0, 0, xr.where(tcdc > 100, 100, tcdc))
+
+    p = ax.pcolormesh(lon, lat, tcdc, transform=pc, cmap="Blues", vmin=0, vmax=100)
+    fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="%")
+    ax.set_title(f"Total Cloud Cover (entire column)\nValid: {ds.valid_time.item()}")
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_pressure(ds, outfile):
+    """Mean sea-level pressure with contour lines."""
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
+
+    lon, lat = _coords(ds)
+    prmsl = _first_var(ds, ["PRMSL_meansealevel", "prmsl", "msl"]).squeeze()
+    prmsl_hpa = prmsl / 100.0  # Pa → hPa
+
+    # Filled contour background
+    p = ax.pcolormesh(lon, lat, prmsl_hpa, transform=pc,
+                      cmap="RdBu_r", vmin=1000, vmax=1025)
+    fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="hPa")
+
+    # Overlaid contour lines every 2 hPa
+    try:
+        lon_vals = lon.values if hasattr(lon, "values") else np.asarray(lon)
+        lat_vals = lat.values if hasattr(lat, "values") else np.asarray(lat)
+        p_vals   = prmsl_hpa.values if hasattr(prmsl_hpa, "values") else np.asarray(prmsl_hpa)
+        if lon_vals.ndim == 2 and lat_vals.ndim == 2:
+            ax.contour(lon_vals, lat_vals, p_vals, transform=pc,
+                       levels=np.arange(990, 1030, 2),
+                       colors="black", linewidths=0.6, alpha=0.6)
+    except Exception:
+        pass  # Contours are cosmetic; don't fail the whole plot
+
+    ax.set_title(f"Mean Sea-Level Pressure\nValid: {ds.valid_time.item()}")
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_evapotranspiration(ds, outfile):
+    """Reference evapotranspiration (mm day⁻¹) derived from surface latent heat flux."""
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
+
+    lon, lat = _coords(ds)
+    lhtfl = _first_var(ds, ["LHTFL_surface", "lhtfl", "slhf"]).squeeze()
+    et    = _et_from_lhtfl(lhtfl.values)
+
+    p = ax.pcolormesh(lon, lat, et, transform=pc, cmap="YlGn", vmin=0, vmax=12)
+    fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm day\u207b\u00b9")
+    ax.set_title(
+        "Evapotranspiration (from LHTFL)\n"
+        f"ET = LHTFL / L\u1d65   Valid: {ds.valid_time.item()}"
+    )
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_heat_fluxes(ds, outfile):
+    """Side-by-side latent and sensible heat net fluxes (W m\u207b\u00b2).
+
+    Positive = upward from surface to atmosphere.
+    """
+    fig = plt.figure(figsize=(16, 8))
+    gs  = gridspec.GridSpec(1, 2, figure=fig, wspace=0.08)
+
+    # ── Latent heat ──────────────────────────────────────────────────────────
+    ax_l = fig.add_subplot(gs[0], projection=ccrs.PlateCarree())
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax_l).COASTLINES()
+
+    lon, lat = _coords(ds)
+    lhtfl = _first_var(ds, ["LHTFL_surface", "lhtfl", "slhf"]).squeeze()
+
+    pm_l = ax_l.pcolormesh(lon, lat, lhtfl, transform=pc,
+                            cmap="YlOrRd", vmin=-50, vmax=400)
+    fig.colorbar(pm_l, ax=ax_l, orientation="horizontal", pad=0.05, label="W m\u207b\u00b2")
+    ax_l.set_title(f"Latent Heat Flux (LHTFL)\nValid: {ds.valid_time.item()}")
+
+    # ── Sensible heat ────────────────────────────────────────────────────────
+    ax_s = fig.add_subplot(gs[1], projection=ccrs.PlateCarree())
+    EasyMap("50m", crs=ds.herbie.crs, ax=ax_s).COASTLINES()
+
+    shtfl = _first_var(ds, ["SHTFL_surface", "shtfl", "sshf"]).squeeze()
+
+    pm_s = ax_s.pcolormesh(lon, lat, shtfl, transform=pc,
+                            cmap="RdPu", vmin=-50, vmax=200)
+    fig.colorbar(pm_s, ax=ax_s, orientation="horizontal", pad=0.05, label="W m\u207b\u00b2")
+    ax_s.set_title(f"Sensible Heat Flux (SHTFL)\nValid: {ds.valid_time.item()}")
+
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)

@@ -13,11 +13,23 @@ if "use_new_combine_kwarg_defaults" in xr.core.options.OPTIONS:
 
 
 TARGET_FIELDS = {
-    "TMP_2maboveground": ":TMP:2 m above ground:",
+    # ── existing ──────────────────────────────────────────────────────────
+    "TMP_2maboveground":  ":TMP:2 m above ground:",
     "UGRD_10maboveground": ":UGRD:10 m above ground:",
     "VGRD_10maboveground": ":VGRD:10 m above ground:",
-    "APCP_surface": ":APCP:surface:",
-    "PRATE_surface": ":PRATE:surface:",
+    "APCP_surface":        ":APCP:surface:",
+    "PRATE_surface":       ":PRATE:surface:",
+    # ── new ───────────────────────────────────────────────────────────────
+    # Dewpoint at 2 m  → needed for wet-bulb temperature derivation
+    "DPT_2maboveground":   ":DPT:2 m above ground:",
+    # Total cloud cover (entire atmosphere column, 0–100 %)
+    "TCDC_entireatmosphere": ":TCDC:entire atmosphere:",
+    # Mean sea-level pressure
+    "PRMSL_meansealevel":  ":PRMSL:mean sea level:",
+    # Surface latent heat net flux  (W m⁻²)  → evapotranspiration
+    "LHTFL_surface":       ":LHTFL:surface:",
+    # Surface sensible heat net flux (W m⁻²)
+    "SHTFL_surface":       ":SHTFL:surface:",
 }
 
 
