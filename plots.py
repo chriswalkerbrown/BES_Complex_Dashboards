@@ -129,24 +129,17 @@ def _quiver_fields(lon, lat, u, v, step=5):
 # Meteorological derivations
 # =============================================================================
 
-def _rh_from_dewpoint(t_k, td_k):
-    """Approximate relative humidity (%) from temperature and dewpoint (both K)."""
-    t_c  = np.asarray(t_k,  dtype=float) - 273.15
-    td_c = np.asarray(td_k, dtype=float) - 273.15
-    # Magnus formula (Bolton 1980)
-    es = 6.112 * np.exp(17.67 * t_c  / (t_c  + 243.5))
-    e  = 6.112 * np.exp(17.67 * td_c / (td_c + 243.5))
-    return np.clip(100.0 * e / es, 0.0, 100.0)
+def _wetbulb_stull_from_t_only(t_c, assumed_rh=80.0):
+    """Wet-bulb temperature estimate (degC) using Stull (2011) with a fixed RH.
 
+    The NAM afwaca product does not include dewpoint or specific humidity.
+    For the BES Islands (tropical maritime), RH is typically 70-85%.
+    Default assumed_rh=80 % gives a conservative estimate.
 
-def _wetbulb_stull(t_c, rh):
-    """Wet-bulb temperature (degC) via Stull (2011) empirical formula.
-
-    Valid for -20 degC <= T <= 50 degC and 5 % <= RH <= 99 %.
     Stull, R. (2011), J. Appl. Meteorol. Climatol. 50, 2267-2269.
     """
-    t  = np.asarray(t_c,  dtype=float)
-    rh = np.asarray(rh,   dtype=float)
+    t  = np.asarray(t_c, dtype=float)
+    rh = np.full_like(t, assumed_rh)
     return (
         t  * np.arctan(0.151977 * (rh + 8.313659) ** 0.5)
         + np.arctan(t + rh)
@@ -260,42 +253,52 @@ def plot_precip_rate(ds, outfile, forecast_hour=None):
 # =============================================================================
 
 def plot_wetbulb(ds, outfile):
-    """Wet-bulb temperature at 2 m derived via Stull (2011)."""
+    """Wet-bulb temperature at 2 m.
+
+    The NAM afwaca product does not include dewpoint (DPT) or specific humidity,
+    so this uses the Stull (2011) formula with an assumed RH of 80 % — a
+    representative value for the tropical maritime BES Islands environment.
+    The result is labelled clearly as an estimate.
+    """
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    t2m  = _first_var(ds, ["TMP_2maboveground", "t2m", "tmp", "t"]).values
-    td2m = _first_var(ds, ["DPT_2maboveground", "d2m", "dpt"]).values
-
-    rh    = _rh_from_dewpoint(t2m, td2m)
+    t2m   = _first_var(ds, ["TMP_2maboveground", "t2m", "tmp", "t"]).values
     t2m_c = t2m - 273.15
-    wb    = _wetbulb_stull(t2m_c, rh)
+    wb    = _wetbulb_stull_from_t_only(t2m_c, assumed_rh=80.0)
 
-    # Caribbean wet-bulb range ~20-32 degC; WBGT caution at 28 degC
+    # Caribbean wet-bulb range ~20-32 degC; WBGT caution threshold at 28 degC
     p = ax.pcolormesh(lon, lat, wb, transform=pc, cmap="RdYlGn_r", vmin=20, vmax=32)
     cbar = fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="degC")
+    # Mark the WBGT-equivalent caution line at 28 degC
     cbar.ax.axvline(28, color="red", linewidth=1.5, linestyle="--")
 
-    ax.set_title(f"Wet-bulb Temperature (2 m, Stull 2011)\nValid: {ds.valid_time.item()}")
+    ax.set_title(
+        f"Wet-bulb Temp (2 m, RH=80% assumed)\nValid: {ds.valid_time.item()}"
+    )
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_cloud_cover(ds, outfile):
-    """Total cloud cover for the entire atmospheric column (0-100 %)."""
+def plot_latent_heat(ds, outfile):
+    """Surface latent heat net flux (W m-2) — a proxy for evaporation intensity.
+
+    Uses slhtf / avg_slhtf from the NAM afwaca product (TCDC cloud cover is
+    not available in this product subset).
+    """
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES(linewidth=0.8)
 
     lon, lat = _coords(ds)
-    tcdc = _first_var(ds, ["TCDC_entireatmosphere", "tcc", "tcdc"]).squeeze()
-    tcdc = xr.where(tcdc < 0, 0, xr.where(tcdc > 100, 100, tcdc))
+    # afwaca actual names: slhtf (instantaneous) or avg_slhtf (average)
+    lhtfl = _first_var(ds, ["avg_slhtf", "slhtf", "LHTFL_surface", "lhtfl", "slhf"]).squeeze()
 
-    p = ax.pcolormesh(lon, lat, tcdc, transform=pc, cmap="Blues", vmin=0, vmax=100)
-    fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="%")
-    ax.set_title(f"Total Cloud Cover (entire column)\nValid: {ds.valid_time.item()}")
+    p = ax.pcolormesh(lon, lat, lhtfl, transform=pc, cmap="YlOrRd", vmin=-50, vmax=400)
+    fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="W m-2")
+    ax.set_title(f"Surface Latent Heat Flux\nValid: {ds.valid_time.item()}")
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -330,18 +333,24 @@ def plot_pressure(ds, outfile):
 
 
 def plot_evapotranspiration(ds, outfile):
-    """Evapotranspiration (mm day-1) derived from surface latent heat flux."""
+    """Evapotranspiration (mm day-1) derived from surface latent heat flux.
+
+    Uses slhtf / avg_slhtf — the actual afwaca variable names for latent heat.
+    """
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(projection=ccrs.PlateCarree())
     EasyMap("50m", crs=ds.herbie.crs, ax=ax).COASTLINES()
 
     lon, lat = _coords(ds)
-    lhtfl = _first_var(ds, ["LHTFL_surface", "lhtfl", "slhf"]).squeeze()
+    # afwaca actual names: slhtf (instantaneous) or avg_slhtf (average)
+    lhtfl = _first_var(ds, ["avg_slhtf", "slhtf", "LHTFL_surface", "lhtfl", "slhf"]).squeeze()
     et    = _et_from_lhtfl(lhtfl.values)
 
     p = ax.pcolormesh(lon, lat, et, transform=pc, cmap="YlGn", vmin=0, vmax=12)
     fig.colorbar(p, ax=ax, orientation="horizontal", pad=0.05, label="mm day-1")
-    ax.set_title(f"Evapotranspiration (from LHTFL)\nET = LHTFL / Lv   Valid: {ds.valid_time.item()}")
+    ax.set_title(
+        f"Evapotranspiration (LHTFL / Lv)\nValid: {ds.valid_time.item()}"
+    )
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -349,7 +358,9 @@ def plot_evapotranspiration(ds, outfile):
 def plot_heat_fluxes(ds, outfile):
     """Side-by-side latent and sensible heat net fluxes (W m-2).
 
-    Positive = upward from surface to atmosphere.
+    Uses actual afwaca variable names:
+      slhtf / avg_slhtf  = surface latent heat flux
+      ishf  / avg_ishf   = instantaneous/average surface sensible heat flux
     """
     fig = plt.figure(figsize=(16, 8))
     gs  = gridspec.GridSpec(1, 2, figure=fig, wspace=0.08)
@@ -358,18 +369,19 @@ def plot_heat_fluxes(ds, outfile):
     ax_l = fig.add_subplot(gs[0], projection=ccrs.PlateCarree())
     EasyMap("50m", crs=ds.herbie.crs, ax=ax_l).COASTLINES()
     lon, lat = _coords(ds)
-    lhtfl = _first_var(ds, ["LHTFL_surface", "lhtfl", "slhf"]).squeeze()
+    lhtfl = _first_var(ds, ["avg_slhtf", "slhtf", "LHTFL_surface", "lhtfl", "slhf"]).squeeze()
     pm_l = ax_l.pcolormesh(lon, lat, lhtfl, transform=pc, cmap="YlOrRd", vmin=-50, vmax=400)
     fig.colorbar(pm_l, ax=ax_l, orientation="horizontal", pad=0.05, label="W m-2")
-    ax_l.set_title(f"Latent Heat Flux (LHTFL)\nValid: {ds.valid_time.item()}")
+    ax_l.set_title(f"Latent Heat Flux (slhtf)\nValid: {ds.valid_time.item()}")
 
     # Sensible heat
     ax_s = fig.add_subplot(gs[1], projection=ccrs.PlateCarree())
     EasyMap("50m", crs=ds.herbie.crs, ax=ax_s).COASTLINES()
-    shtfl = _first_var(ds, ["SHTFL_surface", "shtfl", "sshf"]).squeeze()
+    # afwaca actual names: ishf (instantaneous) or avg_ishf (average)
+    shtfl = _first_var(ds, ["avg_ishf", "ishf", "SHTFL_surface", "shtfl", "sshf"]).squeeze()
     pm_s = ax_s.pcolormesh(lon, lat, shtfl, transform=pc, cmap="RdPu", vmin=-50, vmax=200)
     fig.colorbar(pm_s, ax=ax_s, orientation="horizontal", pad=0.05, label="W m-2")
-    ax_s.set_title(f"Sensible Heat Flux (SHTFL)\nValid: {ds.valid_time.item()}")
+    ax_s.set_title(f"Sensible Heat Flux (ishf)\nValid: {ds.valid_time.item()}")
 
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
