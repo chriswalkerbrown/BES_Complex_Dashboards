@@ -19,14 +19,17 @@ FORECAST_OPTIONS = [
 # Layer definitions --------------------------------------------------------
 # Each entry: (display_label, file_prefix, plot_title)
 # Rainfall is special-cased for its Accumulated / Rate sub-option.
+#
+# Available afwaca vars: t2m, u10, v10, tp, prmsl, avg_slhtf, slhtf, ishf, avg_ishf
+# NOT available: DPT/dewpoint (wetbulb uses assumed RH=80%), TCDC (replaced by Latent Heat)
 SIMPLE_LAYERS = [
-    ("Temperature",        "region",      "2 m Temperature"),
-    ("Wind",               "wind",        "10 m Wind"),
-    ("Wet-bulb Temp",      "wetbulb",     "Wet-bulb Temperature (2 m)"),
-    ("Cloud Cover",        "cloud",       "Total Cloud Cover"),
-    ("Pressure",           "pressure",    "Mean Sea-Level Pressure"),
-    ("Evapotranspiration", "et",          "Evapotranspiration (from LHTFL)"),
-    ("Heat Fluxes",        "heat_fluxes", "Latent & Sensible Heat Fluxes"),
+    ("Temperature",        "region",       "2 m Temperature"),
+    ("Wind",               "wind",         "10 m Wind"),
+    ("Wet-bulb Temp",      "wetbulb",      "Wet-bulb Temp (2 m, RH=80% assumed)"),
+    ("Latent Heat",        "latent_heat",  "Surface Latent Heat Flux"),
+    ("Pressure",           "pressure",     "Mean Sea-Level Pressure"),
+    ("Evapotranspiration", "et",           "Evapotranspiration (from LHTFL)"),
+    ("Heat Fluxes",        "heat_fluxes",  "Latent & Sensible Heat Fluxes"),
 ]
 RAINFALL_OPTIONS = ["Accumulated", "Rate"]
 
@@ -66,7 +69,6 @@ def build_state_table(rev: int) -> dict:
     for label, fhr in FORECAST_OPTIONS:
         entry = {}
 
-        # Simple (single-image) layers
         for layer_lbl, prefix, title in SIMPLE_LAYERS:
             entry[layer_lbl] = {
                 "src":   image_url(prefix, fhr, rev),
@@ -74,7 +76,6 @@ def build_state_table(rev: int) -> dict:
                 "title": title,
             }
 
-        # Rainfall with sub-options
         entry["Rainfall"] = {
             "Accumulated": {
                 "src":   image_url("precip_accum", fhr, rev),
