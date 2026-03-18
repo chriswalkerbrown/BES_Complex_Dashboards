@@ -9,9 +9,8 @@ from plots import (
     plot_precip_rate,
     plot_temperature,
     plot_wind,
-    # new variables
     plot_wetbulb,
-    plot_cloud_cover,
+    plot_latent_heat,   # replaces plot_cloud_cover (TCDC not in afwaca)
     plot_pressure,
     plot_evapotranspiration,
     plot_heat_fluxes,
@@ -54,19 +53,19 @@ for fxx in FORECAST_HOURS:
         plot_precip_rate(region, image_path("precip_rate", fxx), forecast_hour=fxx)
         write_timestamp("precip_rate", fxx)
 
-        # new layers — each wrapped individually so one missing GRIB field
-        # does not abort the remaining variables
+        # new layers
         try:
             plot_wetbulb(region, image_path("wetbulb", fxx))
             write_timestamp("wetbulb", fxx)
         except Exception as exc:
             print(f"  WARNING wetbulb fxx={fxx}: {exc}")
 
+        # TCDC not in afwaca; use latent heat flux instead
         try:
-            plot_cloud_cover(region, image_path("cloud", fxx))
-            write_timestamp("cloud", fxx)
+            plot_latent_heat(region, image_path("latent_heat", fxx))
+            write_timestamp("latent_heat", fxx)
         except Exception as exc:
-            print(f"  WARNING cloud_cover fxx={fxx}: {exc}")
+            print(f"  WARNING latent_heat fxx={fxx}: {exc}")
 
         try:
             plot_pressure(region, image_path("pressure", fxx))
