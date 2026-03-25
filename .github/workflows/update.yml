@@ -42,3 +42,11 @@ jobs:
           git commit -m "Automated hourly update" || echo "No changes"
           git pull --rebase origin master
           git push origin master
+
+      - name: Ping healthcheck.io (success)
+        if: success()
+        run: curl -fsS --retry 3 https://hc-ping.com/1257e67a-883c-47f0-98dc-2df1877a39bd > /dev/null
+
+      - name: Ping healthcheck.io (failure)
+        if: failure()
+        run: curl -fsS --retry 3 https://hc-ping.com/1257e67a-883c-47f0-98dc-2df1877a39bd/fail > /dev/null
