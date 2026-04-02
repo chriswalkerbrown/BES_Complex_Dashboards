@@ -90,6 +90,7 @@ for fxx in FORECAST_HOURS:
             write_timestamp("isentropic", fxx)
         except Exception as exc:
             print(f"  WARNING isentropic fxx={fxx}: {exc}")
+            print(f"  INFO isentropic available vars fxx={fxx}: {list(region.data_vars)}")
 
 
         available_hours.append(_fxx_label(fxx))
