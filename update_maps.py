@@ -14,6 +14,7 @@ from plots import (
     plot_pressure,
     plot_evapotranspiration,
     plot_heat_fluxes,
+    plot_isentropic,
 )
 
 FORECAST_HOURS = [0, 3, 6, 12, 24, 48, 72]
@@ -84,6 +85,12 @@ for fxx in FORECAST_HOURS:
             write_timestamp("heat_fluxes", fxx)
         except Exception as exc:
             print(f"  WARNING heat_fluxes fxx={fxx}: {exc}")
+                    try:
+            plot_isentropic(region, image_path("isentropic", fxx))
+            write_timestamp("isentropic", fxx)
+        except Exception as exc:
+            print(f"  WARNING isentropic fxx={fxx}: {exc}")
+
 
         available_hours.append(_fxx_label(fxx))
 
