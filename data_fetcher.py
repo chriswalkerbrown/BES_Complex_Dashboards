@@ -30,6 +30,11 @@ TARGET_FIELDS = {
     "LHTFL_surface":         ":LHTFL:surface:",
     # Surface sensible heat net flux (W m-2)
     "SHTFL_surface":         ":SHTFL:surface:",
+    # Upper-air fields for isentropic diagnostics
+    "TMP_isobaric":          ":TMP:isobaricInhPa:",
+    "UGRD_isobaric":         ":UGRD:isobaricInhPa:",
+    "VGRD_isobaric":         ":VGRD:isobaricInhPa:",
+    "SPFH_isobaric":         ":SPFH:isobaricInhPa:",
 }
 
 
