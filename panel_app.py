@@ -30,6 +30,7 @@ SIMPLE_LAYERS = [
     ("Pressure",           "pressure",     "Mean Sea-Level Pressure"),
     ("Evapotranspiration", "et",           "Evapotranspiration (from LHTFL)"),
     ("Heat Fluxes",        "heat_fluxes",  "Latent & Sensible Heat Fluxes"),
+    ("Isentropic",         "isentropic",   "Isentropic RH + Wind (θ=310 K)"),
 ]
 RAINFALL_OPTIONS = ["Accumulated", "Rate"]
 
