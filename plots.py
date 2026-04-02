@@ -263,10 +263,10 @@ def plot_precip_rate(ds, outfile, forecast_hour=None):
 
 def plot_isentropic(ds, outfile, theta_level=310.0):
     """Isentropic RH and wind on a constant theta surface."""
-    temp = _first_var(ds, ["TMP_isobaric", "t", "tmp"])
-    u = _first_var(ds, ["UGRD_isobaric", "u", "u_wind"])
-    v = _first_var(ds, ["VGRD_isobaric", "v", "v_wind"])
-    q = _first_var(ds, ["SPFH_isobaric", "q", "specific_humidity"])
+    temp = _first_var(ds, ["TMP_isobaric", "tmpprs", "t", "tmp"])
+    u = _first_var(ds, ["UGRD_isobaric", "ugrdprs", "u", "u_wind"])
+    v = _first_var(ds, ["VGRD_isobaric", "vgrdprs", "v", "v_wind"])
+    q = _first_var(ds, ["SPFH_isobaric", "spfhprs", "q", "specific_humidity"])
 
     vert_name = _find_vertical_name(temp)
     if vert_name is None:
