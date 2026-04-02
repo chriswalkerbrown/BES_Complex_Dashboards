@@ -5,7 +5,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from herbie.toolbox import EasyMap, pc
 import xarray as xr
-
+from metpy.interpolate import interpolate_to_isosurface
 
 # =============================================================================
 # Internal helpers
@@ -114,6 +114,16 @@ def crop_box(ds, lat_min, lat_max, lon_min, lon_max):
 def _coords(ds):
     lat_name, lon_name = _find_lat_lon_names(ds)
     return ds[lon_name], ds[lat_name]
+
+def _find_vertical_name(da):
+    candidates = ["isobaricInhPa", "isobaricInPa", "level", "isobaric", "lv_ISBL0"]
+    for name in candidates:
+        if name in da.dims or name in da.coords:
+            return name
+    for dim in da.dims:
+        if "isobaric" in dim.lower() or "level" in dim.lower():
+            return dim
+    return None
 
 
 def _quiver_fields(lon, lat, u, v, step=5):
@@ -251,7 +261,65 @@ def plot_precip_rate(ds, outfile, forecast_hour=None):
     fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
+def plot_isentropic(ds, outfile, theta_level=310.0):
+    """Isentropic RH and wind on a constant theta surface."""
+    temp = _first_var(ds, ["TMP_isobaric", "t", "tmp"])
+    u = _first_var(ds, ["UGRD_isobaric", "u", "u_wind"])
+    v = _first_var(ds, ["VGRD_isobaric", "v", "v_wind"])
+    q = _first_var(ds, ["SPFH_isobaric", "q", "specific_humidity"])
 
+    vert_name = _find_vertical_name(temp)
+    if vert_name is None:
+        raise ValueError("No pressure vertical coordinate found for isentropic analysis.")
+
+    temp = temp.squeeze()
+    u = u.squeeze()
+    v = v.squeeze()
+    q = q.squeeze()
+
+    p_coord = temp[vert_name]
+    p_vals = np.asarray(p_coord.values, dtype=float)
+    p_hpa = p_vals / 100.0 if np.nanmax(p_vals) > 2000 else p_vals
+    p3d = (p_hpa * 100.0)[:, None, None]
+
+    t_k = np.asarray(temp.values, dtype=float)
+    u_ms = np.asarray(u.values, dtype=float)
+    v_ms = np.asarray(v.values, dtype=float)
+    q_kgkg = np.asarray(q.values, dtype=float)
+
+    # Potential temperature from T and pressure
+    theta = t_k * (100000.0 / p3d) ** 0.2854
+
+    # Geopotential height is assumed 0 m everywhere as requested
+    _z = np.zeros_like(theta)
+
+    # Requested RH approximation:
+    # RH = (specific humidity × pressure) / (saturation pressure) × 100%
+    t_c = t_k - 273.15
+    es_pa = (6.112 * np.exp((17.67 * t_c) / (t_c + 243.5))) * 100.0
+    rh = np.clip((q_kgkg * p3d) / np.maximum(es_pa, 1.0) * 100.0, 0.0, 100.0)
+
+    rh_iso = interpolate_to_isosurface(theta, rh, theta_level, axis=0)
+    u_iso = interpolate_to_isosurface(theta, u_ms, theta_level, axis=0)
+    v_iso = interpolate_to_isosurface(theta, v_ms, theta_level, axis=0)
+
+    lon, lat = _coords(ds)
+    fig, ax = _setup_map_ax(ds)
+    pm = ax.pcolormesh(lon, lat, rh_iso, transform=pc, cmap="YlGnBu", vmin=10, vmax=100)
+    _hcolorbar(fig, ax, pm, "Relative Humidity (%)")
+
+    qlon, qlat, qu, qv = _quiver_fields(lon, lat, xr.DataArray(u_iso), xr.DataArray(v_iso), step=1)
+    ny, nx = qu.shape[-2], qu.shape[-1]
+    stride = max(1, min(ny, nx) // 20)
+    qplot = ax.quiver(
+        qlon[::stride, ::stride], qlat[::stride, ::stride],
+        qu[::stride, ::stride], qv[::stride, ::stride],
+        transform=pc, scale=220, width=0.0018, color="black", alpha=0.75
+    )
+    ax.quiverkey(qplot, X=0.92, Y=-0.08, U=10, label="10 m/s", labelpos="E", coordinates="axes")
+    ax.set_title(f"Isentropic RH + Wind (θ={theta_level:.0f} K)\nValid: {ds.valid_time.item()}")
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
+    plt.close(fig)
 def plot_wetbulb(ds, outfile):
     fig, ax = _setup_map_ax(ds)
 
