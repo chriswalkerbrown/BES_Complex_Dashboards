@@ -54,6 +54,11 @@ def ts_text(name: str, fhr: str) -> str:
 def image_url(name: str, fhr: str, rev: int) -> str:
     return f"static/{name}_{fhr}.png?v={rev}"
 
+def image_src_or_none(name: str, fhr: str, rev: int):
+    if (STATIC_DIR / f"{name}_{fhr}.png").exists():
+        return image_url(name, fhr, rev)
+    return None
+
 
 def compute_latest() -> str:
     if not STATIC_DIR.exists():
@@ -72,19 +77,19 @@ def build_state_table(rev: int) -> dict:
 
         for layer_lbl, prefix, title in SIMPLE_LAYERS:
             entry[layer_lbl] = {
-                "src":   image_url(prefix, fhr, rev),
+                "src":   image_src_or_none(prefix, fhr, rev)
                 "ts":    ts_text(prefix, fhr),
                 "title": title,
             }
 
         entry["Rainfall"] = {
             "Accumulated": {
-                "src":   image_url("precip_accum", fhr, rev),
+                "src":   image_src_or_none("precip_accum", fhr, rev),,
                 "ts":    ts_text("precip_accum", fhr),
                 "title": "Accumulated Rainfall",
             },
             "Rate": {
-                "src":   image_url("precip_rate", fhr, rev),
+                "src":   image_src_or_none("precip_rate", fhr, rev),
                 "ts":    ts_text("precip_rate", fhr),
                 "title": "Rainfall Rate",
             },
